@@ -1,0 +1,15 @@
+Before we graph our simple raw data we need to calculate the following:
+1-Standard deviation 
+2-mean OD
+
+#this code will give two more columns for SD and Mean 
+library(dplyr)
+Combined_data_stats <- Combined_data %>%
+  group_by(Cells) %>%
+  mutate(
+    Mean_OD = mean(Absorbance),
+    Sd = sd(Absorbance)
+  )
+
+
+  
