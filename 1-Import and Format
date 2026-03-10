@@ -1,0 +1,8 @@
+first thing we want to do is import our data. Doing that is quite simple. 
+First get your working directory use the code -> getwd() this will going to give your working directory
+Then go ahead and find your directory in your computers files or mac's finder 
+Put your table in that working directory, preferably in your project section.
+Most Absorbance data comes in excel so in this tutorial excel will be used.
+Now you should see your excell under your files section in Rstudios 
+Click on it and say import, if you dont have headers remove the thick in "names as first row"
+You should see your data in your enviorment.
