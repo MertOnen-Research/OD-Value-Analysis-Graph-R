@@ -6,3 +6,31 @@ Most Absorbance data comes in excel so in this tutorial excel will be used.
 Now you should see your excell under your files section in Rstudios 
 Click on it and say import, if you dont have headers remove the thick in "names as first row"
 You should see your data in your enviorment.
+
+#now first thing we want to do is to add column names and row names if you dont already have them 
+colnames(Data) <- c("Blank","10k","15k","5k")
+rownames(Data) <- c("rep1", "rep2", "rep3")
+
+#İf you want to keep adding new columns 
+Data$Plate <- 1
+Data$Hour <- 1
+
+#Then we need to pivot this table into a long format 
+long_data <- pivot_longer(
+  Data,
+  cols = c("5k","10k","15k","Blank"),
+  names_to = "Cells",
+  values_to = "Absorbance"
+)
+
+Most likeley you will have more than one plate for a experiment or more factors. Go ahead and run the stteps for them as well then we will add them together 
+using this code. This will bind similiar data sets into one giant for convience 
+
+library(dplyr)
+Combined_data <- bind_rows(long_data, long_data2, long_data3)
+
+
+
+
+
+
