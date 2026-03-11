@@ -1,56 +1,64 @@
-Before we graph our simple raw data we need to calculate the following:
-1-Standard deviation 
-2-mean OD
+Graphing
 
-#this code will give two more columns for SD and Mean 
+# Setup -------------------------------------------------------------------
 library(dplyr)
-Combined_data_stats <- Combined_data %>%
-  group_by(Cells) %>% #This will group every value who is in the same group across all plates
+library(stringr)
+library(ggplot2)
+
+# 1. Data Cleaning & Preparation ------------------------------------------
+# Ensuring 'Cells' is a factor in the correct order: 0, 5k, 10k, 15k
+# This prevents the "0, 10, 15, 5" sorting error.
+plot_data <- Combined_data %>%
   mutate(
-    Mean_OD = mean(Absorbance),
-    Sd = sd(Absorbance)
-  )
+    Cells = factor(Cells, levels = c("0", "5k", "10k", "15k")),
+    Plate = as.factor(Plate)
+  ) %>%
+  # 2. Calculate Statistics ------------------------------------------------
+  group_by(Cells) %>%
+  mutate(
+    Mean_OD = mean(Absorbance, na.rm = TRUE),
+    Sd      = sd(Absorbance, na.rm = TRUE)
+  ) %>%
+  ungroup()
 
-#Now we will contiune with the graphing
-
-ggplot() +
-  # Raw points (colored by plate)
-  geom_point(
-    data = Combined_data_stats,
-    aes(x = Cells,
-        y = Absorbance,
-        color = Plate),
-    alpha = 0.6,
-    size = 5
-  ) +
-  # Mean ± SD (black)
+# 3. Create Visualization -------------------------------------------------
+ggplot(plot_data, aes(x = Cells, y = Absorbance)) +
+  # Add a line to connect the mean values
+  geom_line(aes(y = Mean_OD, group = 1), color = "black", size = 0.8) +
+  
+  # Raw points colored by plate
+  geom_point(aes(color = Plate), alpha = 0.6, size = 4) +
+  
+  # Error bars representing Mean ± SD
   geom_errorbar(
-    data = Combined_data_stats,
-    aes(x = Cells,
-        ymin = Mean_OD - Sd,
-        ymax = Mean_OD + Sd),
-    width = 0.05,
-    size = 0.8
+    aes(ymin = Mean_OD - Sd, ymax = Mean_OD + Sd),
+    width = 0.1, 
+    size = 0.8, 
+    color = "black"
   ) +
-  geom_point(
-    data = Combined_data_stats,
-    aes(x = Cells, y = Mean_OD),
-    color = "black",
-    size = 4,
-    
-  ) +
+  
+  # Larger point for the Mean
+  geom_point(aes(y = Mean_OD), color = "black", size = 5, shape = 18) +
+  
+  # Customization & Styling
   scale_color_manual(
-    values = c("1" = "#1b9e77",
-               "2" = "#d95f02",
-               "3" = "#7570b3"),
+    values = c("1" = "#1b9e77", "2" = "#d95f02", "3" = "#7570b3"),
     name = "Plate"
   ) +
   labs(
-    title = "Sample Graph",
+    title = "Cell Density vs. Absorbance (OD)",
+    subtitle = "Mean values connected by line; Error bars represent ±1 SD",
+    x = "Cell Concentration",
+    y = "Absorbance (OD)",
+    caption = "Data source: Combined Plate Analysis"
   ) +
-  theme_classic()
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "top"
+  )
 
-#this will give you a nice scatter plot for your data 
+
 
 
   
