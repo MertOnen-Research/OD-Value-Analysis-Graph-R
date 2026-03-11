@@ -23,7 +23,7 @@ The script looks for the word "plate " to find the Plate ID.
 
 The script looks for a number followed by "h" to find the Hour.
 
-⚙️ 2. Installation & Setup
+2. Installation & Setup
 Ensure you have the following R libraries installed:
 
 
@@ -35,7 +35,7 @@ Place all your absorbance Excel files in your Working Directory.
 
 Open the R project and run the scripts in order.
 
-🛠 3. Data Extraction Range
+3. Data Extraction Range
 Plate readers often export a lot of "junk" text at the top of the Excel sheet. This script targets the raw data block directly.
 
 Default Target: D26:F29
