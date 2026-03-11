@@ -1,0 +1,58 @@
+Most of the time when we get the absorbance it is not going to be just the values, the excel document will also contain lots of extra 
+information. Moreover if you have 50 observance data it would be imposisible to give them each plate number of hour.
+So the following code is to identify the excels and retrieve hour and plate number from the name of the excel without manually inserting it.
+
+# Load Libraries ----------------------------------------------------------
+library(readxl)    # Reading Excel ranges
+library(tidyverse) # Data manipulation, strings, and functional loops
+
+# 1. Gather Files ---------------------------------------------------------
+# Creates a list of all Excel files in your current working directory
+file_list <- list.files(pattern = "*.xlsx")
+
+# 2. Define the Import Function -------------------------------------------
+import_lab_data <- function(file_name) {
+  
+  # A. Targeted Data Extraction
+  # Targets the exact 4x4 or 3x4 grid where your absorbance values sit.
+  # col_names = FALSE prevents R from using your first row of data as headers.
+  raw_data <- read_excel(file_name, range = "D26:F29", col_names = FALSE)
+  
+  # B. Filename Metadata Extraction (Regex)
+  # Extracts the digit after "plate " (e.g., "1")
+  plate_val <- str_extract(file_name, "(?<=plate )\\d+")
+  # Extracts the digit before "h.xlsx" (e.g., "2")
+  hour_val  <- str_extract(file_name, "\\d+(?=h.xlsx)")
+  
+  # C. Data Tidy & Transformation
+  raw_data %>%
+    # Assign column headers (adjust to match your actual experiment concentrations)
+    setNames(c("5k", "10k", "15k")) %>% 
+    # Track replicates based on row position
+    mutate(Replicate = row_number()) %>% 
+    # Pivot from 'Wide' to 'Long' format (ideal for ggplot2)
+    pivot_longer(
+      cols = -Replicate, 
+      names_to = "Cells", 
+      values_to = "Absorbance"
+    ) %>%
+    # Attach metadata extracted in step B
+    mutate(
+      Plate = as.factor(plate_val),
+      Hour  = as.numeric(hour_val),
+      Source_File = file_name
+    )
+}
+
+# 3. Execution (The Loop) -------------------------------------------------
+# map_df applies the function to every file and binds them into one master table
+Combined_data <- file_list %>% 
+  map_df(~import_lab_data(.x))
+
+# 4. Final Data Leveling --------------------------------------------------
+# We convert 'Cells' to a factor to ensure they appear in numeric order on graphs
+Combined_data <- Combined_data %>%
+  mutate(Cells = factor(Cells, levels = c("0", "5k", "10k", "15k")))
+
+# Verify the output
+print(head(Combined_data))
