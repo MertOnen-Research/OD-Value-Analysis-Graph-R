@@ -5,11 +5,52 @@ Before we graph our simple raw data we need to calculate the following:
 #this code will give two more columns for SD and Mean 
 library(dplyr)
 Combined_data_stats <- Combined_data %>%
-  group_by(Cells) %>%
+  group_by(Cells) %>% #This will group every value who is in the same group across all plates
   mutate(
     Mean_OD = mean(Absorbance),
     Sd = sd(Absorbance)
   )
+
+#Now we will contiune with the graphing
+
+ggplot() +
+  # Raw points (colored by plate)
+  geom_point(
+    data = Combined_data_stats,
+    aes(x = Cells,
+        y = Absorbance,
+        color = Plate),
+    alpha = 0.6,
+    size = 5
+  ) +
+  # Mean ± SD (black)
+  geom_errorbar(
+    data = Combined_data_stats,
+    aes(x = Cells,
+        ymin = Mean_OD - Sd,
+        ymax = Mean_OD + Sd),
+    width = 0.05,
+    size = 0.8
+  ) +
+  geom_point(
+    data = Combined_data_stats,
+    aes(x = Cells, y = Mean_OD),
+    color = "black",
+    size = 4,
+    
+  ) +
+  scale_color_manual(
+    values = c("1" = "#1b9e77",
+               "2" = "#d95f02",
+               "3" = "#7570b3"),
+    name = "Plate"
+  ) +
+  labs(
+    title = "Sample Graph",
+  ) +
+  theme_classic()
+
+#this will give you a nice scatter plot for your data 
 
 
   
