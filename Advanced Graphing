@@ -1,0 +1,65 @@
+To ensure R analyzes each incubation period as an independent variable, you must update your data processing workflow to group by both "Cells" and "Hour." 
+Defining both factors tells R to calculate a unique Mean and Standard Deviation for every concentration at every specific time point, preventing the data from being inaccurately averaged together.
+Once the statistics are calculated, we apply Faceting to the ggplot2 code. This technique splits the visualization into three distinct, side-by-side panels, allowing for a clear and organized comparison of results across the different incubation times.
+
+This is an example for how to graph a data set with two variables: three different plates with three different incubation times
+# Setup -------------------------------------------------------------------
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+# 1. Data Cleaning & Preparation ------------------------------------------
+plot_data <- Combined_data %>%
+  mutate(
+    # Ensure Cells are in the correct order
+    Cells = factor(Cells, levels = c("0", "5k", "10k", "15k")),
+    Plate = as.factor(Plate),
+    Hour  = as.factor(Hour) # Convert Hour to factor for better labeling
+  ) %>%
+  # 2. Calculate Statistics per Cell AND per Hour -------------------------
+# IMPORTANT: We add Hour to group_by so each graph has its own mean/SD
+group_by(Cells, Hour) %>% 
+  mutate(
+    Mean_OD = mean(Absorbance, na.rm = TRUE),
+    Sd      = sd(Absorbance, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# 3. Create Visualization -------------------------------------------------
+ggplot(plot_data, aes(x = Cells, y = Absorbance)) +
+  # Split the graph into three panels based on Hour
+  facet_wrap(~Hour, labeller = label_both) + 
+  
+  # Add a line to connect the mean values
+  geom_line(aes(y = Mean_OD, group = 1), color = "black", size = 0.8) +
+  
+  # Raw points colored by plate
+  geom_point(aes(color = Plate), alpha = 0.6, size = 4) +
+  
+  # Error bars representing Mean ± SD
+  geom_errorbar(
+    aes(ymin = Mean_OD - Sd, ymax = Mean_OD + Sd),
+    width = 0.1, 
+    size = 0.8, 
+    color = "black"
+  ) +
+  
+  # Larger point for the Mean
+  geom_point(aes(y = Mean_OD), color = "black", size = 5, shape = 18) +
+  
+  # Customization & Styling
+  scale_color_brewer(palette = "Set1", name = "Plate") + # Use a palette that handles many plates
+  labs(
+    title = "Cell Density vs. Absorbance (OD) Across Timepoints",
+    subtitle = "Separate panels for 1h, 2h, and 3h",
+    x = "Cell Concentration",
+    y = "Absorbance (OD)",
+    caption = "Data source: Combined Plate Analysis"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "top",
+    strip.background = element_rect(fill = "gray95"), # Colors the "Hour" labels at the top
+    strip.text = element_text(face = "bold")
+  )
