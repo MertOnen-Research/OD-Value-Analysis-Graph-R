@@ -7,8 +7,15 @@ Now you should see your excell under your files section in Rstudios
 Click on it and say import, if you dont have headers remove the thick in "names as first row"
 You should see your data in your enviorment.
 
-#now first thing we want to do is to add column names and row names if you dont already have them 
+#now first thing we want to do is to add column names and row names if you dont already have them
+(Do not use this, keep reading)
 colnames(Data) <- c("Blank","10k","15k","5k")
+rownames(Data) <- c("rep1", "rep2", "rep3")
+
+In this step there is one important detail make sure you are not using "k" or any non-numeric character in colnames. 
+It will be a problem afterwards use -> 
+
+colnames(Data) <- c("0","10","15","5")
 rownames(Data) <- c("rep1", "rep2", "rep3")
 
 #İf you want to keep adding new columns 
@@ -29,6 +36,8 @@ using this code. This will bind similiar data sets into one giant for convience
 library(dplyr)
 Combined_data <- bind_rows(long_data, long_data2, long_data3)
 
+This is how we import and format data.
+Contiune with Graphing simple raw data 
 
 
 
