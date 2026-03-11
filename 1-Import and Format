@@ -1,45 +1,53 @@
-first thing we want to do is import our data. Doing that is quite simple. 
-First get your working directory use the code -> getwd() this will going to give your working directory
-Then go ahead and find your directory in your computers files or mac's finder 
-Put your table in that working directory, preferably in your project section.
-Most Absorbance data comes in excel so in this tutorial excel will be used.
-Now you should see your excell under your files section in Rstudios 
-Click on it and say import, if you dont have headers remove the thick in "names as first row"
-You should see your data in your enviorment.
+1. Setting Up Your Environment
+Before importing, ensure your data file is in your Working Directory.
 
-#now first thing we want to do is to add column names and row names if you dont already have them
-(Do not use this, keep reading)
-colnames(Data) <- c("Blank","10k","15k","5k")
+# Check where R is looking for files
+getwd() 
+
+# Pro-Tip: Use RStudio Projects (.Rproj) to handle directories automatically!
+2. Importing Data
+Find your Excel file in the Files pane in RStudio.
+
+Click the file and select Import Dataset...
+
+Important: If your Excel sheet doesn't have headers, uncheck "First Row as Names" in the import window.
+
+3. Formatting Column & Row Names
+Once your data (let's call it Data) is in the Environment, we need to label the columns.
+
+Critical: Avoid using "k" or symbols in column names if you plan to convert them to numbers later. Use plain numbers for concentrations.
+
+R
+
+# Assigning clear, numeric column names
+colnames(Data) <- c("0", "10", "15", "5") 
 rownames(Data) <- c("rep1", "rep2", "rep3")
 
-In this step there is one important detail make sure you are not using "k" or any non-numeric character in colnames. 
-It will be a problem afterwards use -> 
-
-colnames(Data) <- c("0","10","15","5")
-rownames(Data) <- c("rep1", "rep2", "rep3")
-
-#İf you want to keep adding new columns 
+# Add metadata columns to track different plates or timepoints
 Data$Plate <- 1
-Data$Hour <- 1
+Data$Hour  <- 1
+4. Converting to Long Format
+R graphs work best with "Long" data. We use tidyr::pivot_longer() to stack our concentrations into a single column.
 
-#Then we need to pivot this table into a long format 
+library(tidyr)
+
 long_data <- pivot_longer(
   Data,
-  cols = c("5k","10k","15k","Blank"),
+  cols = c("0", "5", "10", "15"), # These match your colnames above
   names_to = "Cells",
   values_to = "Absorbance"
 )
+5. Combining Multiple Plates
+If you have multiple plates (e.g., long_data2, long_data3), combine them into one master dataset for easier graphing.
 
-Most likeley you will have more than one plate for a experiment or more factors. Go ahead and run the stteps for them as well then we will add them together 
-using this code. This will bind similiar data sets into one giant for convience 
 
 library(dplyr)
+
+# Stack all datasets vertically
 Combined_data <- bind_rows(long_data, long_data2, long_data3)
 
-This is how we import and format data.
-Contiune with Graphing simple raw data 
-
-
+# Verify the result
+head(Combined_data)
 
 
 
