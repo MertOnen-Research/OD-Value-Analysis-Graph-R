@@ -1,0 +1,338 @@
+# ============================================================
+# FULL PIPELINE (Single timepoint = 3h)
+# D26:K28 -> 8 groups: 160,130,110,90,70,VC,NT,Blank
+# Blank-correct -> Normalize to VC -> % viability -> IC50 + plots
+# ============================================================
+
+# ---------------------------
+# 0) Libraries
+# ---------------------------
+library(readxl)
+library(tidyverse)   # dplyr, tidyr, purrr, ggplot2, stringr, etc.
+library(drc)         # IC50 / dose-response models
+
+# ---------------------------
+# 1) Gather Excel files
+# ---------------------------
+file_list <- list.files(pattern = "\\.xlsx$", full.names = TRUE)
+file_list <- file_list[!grepl("^~\\$", basename(file_list))]  # ignore Excel lock files
+
+if (length(file_list) == 0) {
+  stop("No .xlsx files found. Please set your working directory to the folder containing the Excel files.")
+}
+
+# ---------------------------
+# 2) Import Function (D26:K28)
+# ---------------------------
+import_lab_data <- function(file_path) {
+
+  # Read exactly 8 columns (D..K)
+  raw_data <- read_excel(file_path, range = "D26:K28", col_names = FALSE)
+
+  expected_names <- c("160", "130", "110", "90", "70", "VC", "NT", "Blank")
+
+  # Safety check to prevent "missing names" errors
+  if (ncol(raw_data) != length(expected_names)) {
+    stop(sprintf(
+      "Column mismatch in '%s': read %d columns but expected %d. Check Excel range D26:K28!",
+      basename(file_path), ncol(raw_data), length(expected_names)
+    ))
+  }
+
+  names(raw_data) <- expected_names
+
+  # Plate extraction (optional): if your filename includes "plate 1" etc.
+  fname <- basename(file_path)
+  plate_val <- stringr::str_extract(fname, "(?i)(?<=plate[ _-]?)\\d+")
+
+  # fallback if plate not found
+  if (is.na(plate_val) || plate_val == "") {
+    plate_val <- tools::file_path_sans_ext(fname)
+  }
+
+  raw_data %>%
+    dplyr::mutate(Replicate = dplyr::row_number()) %>%
+    tidyr::pivot_longer(
+      cols = -Replicate,
+      names_to = "Condition",
+      values_to = "Absorbance"
+    ) %>%
+    dplyr::mutate(
+      Absorbance = suppressWarnings(as.numeric(Absorbance)),
+      Plate = as.factor(plate_val),
+      Source_File = fname
+    )
+}
+
+# ---------------------------
+# 3) Build master table
+# ---------------------------
+Combined_data <- purrr::map_df(file_list, import_lab_data) %>%
+  dplyr::mutate(
+    Condition = factor(Condition, levels = c("160", "130", "110", "90", "70", "VC", "NT", "Blank"))
+  )
+
+# ---------------------------
+# 4) Blank correction (per Plate; fallback to global blank)
+#    OD_blankcorr = Absorbance - Blank_mean
+# ---------------------------
+blank_by_plate <- Combined_data %>%
+  dplyr::filter(Condition == "Blank") %>%
+  dplyr::group_by(Plate) %>%
+  dplyr::summarise(
+    Blank_mean_plate = mean(Absorbance, na.rm = TRUE),
+    n_blank = sum(!is.na(Absorbance)),
+    .groups = "drop"
+  )
+
+global_blank_mean <- Combined_data %>%
+  dplyr::filter(Condition == "Blank") %>%
+  dplyr::summarise(global_blank = mean(Absorbance, na.rm = TRUE)) %>%
+  dplyr::pull(global_blank)
+
+if (length(global_blank_mean) == 0 || is.na(global_blank_mean)) {
+  stop("No Blank values found. Cannot do blank subtraction. Check your Blank column in D26:K28.")
+}
+
+Combined_corr <- Combined_data %>%
+  dplyr::left_join(blank_by_plate, by = "Plate") %>%
+  dplyr::mutate(
+    Blank_mean_final = dplyr::if_else(is.na(Blank_mean_plate), global_blank_mean, Blank_mean_plate),
+    OD_blankcorr = Absorbance - Blank_mean_final,
+    OD_blankcorr = pmax(OD_blankcorr, 0)   # clamp negatives to 0 (common in viability assays)
+  )
+
+# ---------------------------
+# 5) Normalize to VC (per Plate; fallback to global VC)
+#    Viability_pct = (OD_blankcorr / VC_mean) * 100
+# ---------------------------
+vc_by_plate <- Combined_corr %>%
+  dplyr::filter(Condition == "VC") %>%
+  dplyr::group_by(Plate) %>%
+  dplyr::summarise(
+    VC_mean_plate = mean(OD_blankcorr, na.rm = TRUE),
+    n_vc = sum(!is.na(OD_blankcorr)),
+    .groups = "drop"
+  )
+
+global_vc_mean <- Combined_corr %>%
+  dplyr::filter(Condition == "VC") %>%
+  dplyr::summarise(global_vc = mean(OD_blankcorr, na.rm = TRUE)) %>%
+  dplyr::pull(global_vc)
+
+if (length(global_vc_mean) == 0 || is.na(global_vc_mean)) {
+  stop("No VC values found. Cannot normalize to VC. Check your VC column in D26:K28.")
+}
+
+Combined_norm <- Combined_corr %>%
+  dplyr::left_join(vc_by_plate, by = "Plate") %>%
+  dplyr::mutate(
+    VC_mean_final = dplyr::if_else(is.na(VC_mean_plate), global_vc_mean, VC_mean_plate),
+    Viability_pct = (OD_blankcorr / VC_mean_final) * 100
+  )
+
+# Optional: cap extreme values if you have occasional crazy spikes
+# Combined_norm <- Combined_norm %>% dplyr::mutate(Viability_pct = pmin(pmax(Viability_pct, 0), 200))
+
+# ---------------------------
+# 6) Summary stats for viability plot (8 groups)
+# ---------------------------
+summary_viab <- Combined_norm %>%
+  dplyr::group_by(Condition) %>%
+  dplyr::summarise(
+    n = sum(!is.na(Viability_pct)),
+    Mean_Viab = mean(Viability_pct, na.rm = TRUE),
+    Sd_Viab   = ifelse(n >= 2, sd(Viability_pct, na.rm = TRUE), NA_real_),
+    .groups = "drop"
+  )
+
+# ---------------------------
+# 7) Plot 1: % Viability across 8 groups
+# ---------------------------
+p1 <- ggplot(Combined_norm, aes(x = Condition, y = Viability_pct)) +
+  geom_point(
+    aes(color = Plate),
+    alpha = 0.35, size = 3,
+    position = position_jitter(width = 0.08),
+    na.rm = TRUE
+  ) +
+  geom_line(
+    data = summary_viab,
+    aes(x = Condition, y = Mean_Viab, group = 1),
+    color = "black", linewidth = 1.1,
+    inherit.aes = FALSE
+  ) +
+  geom_errorbar(
+    data = summary_viab %>% dplyr::filter(!is.na(Sd_Viab)),
+    aes(x = Condition, ymin = Mean_Viab - Sd_Viab, ymax = Mean_Viab + Sd_Viab),
+    width = 0.12, linewidth = 0.8, color = "black",
+    inherit.aes = FALSE
+  ) +
+  geom_point(
+    data = summary_viab,
+    aes(x = Condition, y = Mean_Viab),
+    color = "black", size = 4, shape = 18,
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = summary_viab,
+    aes(x = Condition, y = Mean_Viab, label = paste0("n=", n)),
+    vjust = -1.0, size = 3.6, color = "black",
+    inherit.aes = FALSE
+  ) +
+  scale_color_brewer(palette = "Set1", name = "Plate") +
+  labs(
+    title = "% Viability (3h) — Blank-corrected & normalized to VC",
+    subtitle = "Blank subtraction per Plate (fallback: global blank). Normalized to VC per Plate (fallback: global VC).",
+    x = "Group",
+    y = "Viability (%)"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "top"
+  )
+
+print(p1)
+
+# ---------------------------
+# 8) FINAL IC50 plot:
+#    - uses ONLY numeric doses: 70, 90, 110, 130, 160
+#    - means CONNECTED
+#    - smooth LL.4 curve
+#    - log10 x axis
+# ---------------------------
+
+dose_data <- Combined_norm %>%
+  dplyr::mutate(Dose = suppressWarnings(as.numeric(as.character(Condition)))) %>%
+  dplyr::filter(!is.na(Dose), !is.na(Viability_pct)) %>%
+  dplyr::select(Plate, Dose, Viability_pct)
+
+dose_summary <- dose_data %>%
+  dplyr::group_by(Dose) %>%
+  dplyr::summarise(
+    n = sum(!is.na(Viability_pct)),
+    mean = mean(Viability_pct, na.rm = TRUE),
+    sd   = ifelse(n >= 2, sd(Viability_pct, na.rm = TRUE), NA_real_),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(Dose)
+
+fit_ll4_safe <- function(df) {
+  if (dplyr::n_distinct(df$Dose) < 4 || nrow(df) < 6) return(NULL)
+
+  # Try constrained first (Lower=0, Upper=100) for stability
+  m1 <- tryCatch(
+    drc::drm(
+      Viability_pct ~ Dose,
+      data = df,
+      fct = drc::LL.4(
+        fixed = c(NA, 0, 100, NA),
+        names = c("Slope", "Lower", "Upper", "IC50")
+      )
+    ),
+    error = function(e) NULL
+  )
+  if (!is.null(m1)) return(m1)
+
+  # Fallback to unconstrained
+  tryCatch(
+    drc::drm(
+      Viability_pct ~ Dose,
+      data = df,
+      fct = drc::LL.4(names = c("Slope", "Lower", "Upper", "IC50"))
+    ),
+    error = function(e) NULL
+  )
+}
+
+ic50_model <- fit_ll4_safe(dose_data)
+
+if (is.null(ic50_model)) {
+  warning("IC50 model could not be fitted (need >=4 dose levels and enough points).")
+} else {
+
+  # Extract IC50 (ED50)
+  ic50_ed <- tryCatch(
+    drc::ED(ic50_model, 50, type = "absolute", interval = "delta"),
+    error = function(e) NULL
+  )
+  IC50_est <- if (!is.null(ic50_ed)) as.numeric(ic50_ed[1, 1]) else NA_real_
+
+  # Smooth prediction grid (log-spaced looks best on log axis)
+  dose_min <- min(dose_data$Dose, na.rm = TRUE)
+  dose_max <- max(dose_data$Dose, na.rm = TRUE)
+
+  pred_grid <- tibble(
+    Dose = exp(seq(log(dose_min), log(dose_max), length.out = 300))
+  )
+
+  pred_grid$Pred <- tryCatch(
+    as.numeric(predict(ic50_model, newdata = pred_grid)),
+    error = function(e) rep(NA_real_, nrow(pred_grid))
+  )
+
+  # Build FINAL IC50 plot
+  p2 <- ggplot() +
+    # Raw replicate points
+    geom_point(
+      data = dose_data,
+      aes(x = Dose, y = Viability_pct, color = Plate),
+      alpha = 0.30, size = 3, na.rm = TRUE
+    ) +
+    # Mean ± SD
+    geom_errorbar(
+      data = dose_summary %>% dplyr::filter(!is.na(sd)),
+      aes(x = Dose, ymin = mean - sd, ymax = mean + sd),
+      width = 0.03, linewidth = 0.7, color = "black"
+    ) +
+    geom_point(
+      data = dose_summary,
+      aes(x = Dose, y = mean),
+      color = "black", size = 3.8
+    ) +
+    # ✅ CONNECT THE MEANS (this is what you wanted)
+    geom_line(
+      data = dose_summary,
+      aes(x = Dose, y = mean, group = 1),
+      color = "black", linewidth = 1.0
+    ) +
+    # Smooth fitted curve (LL.4)
+    geom_line(
+      data = pred_grid,
+      aes(x = Dose, y = Pred),
+      color = "black", linewidth = 1.2, alpha = 0.9, na.rm = TRUE
+    ) +
+    # Log dose axis (standard IC50)
+    scale_x_log10(breaks = dose_summary$Dose) +
+    scale_color_brewer(palette = "Set1", name = "Plate") +
+    labs(
+      title = "Dose–Response Curve (3h) — Means Connected + Smooth IC50 Fit",
+      subtitle = "Black dots/line = mean (±SD). Smooth line = LL.4 logistic fit. X-axis is log10.",
+      x = "Dose (log scale)",
+      y = "Viability (%)"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      legend.position = "top"
+    )
+
+  # Add IC50 annotation safely
+  if (!is.na(IC50_est) && is.finite(IC50_est)) {
+    p2 <- p2 +
+      geom_vline(xintercept = IC50_est, linetype = "dashed",
+                 linewidth = 0.9, color = "red") +
+      annotate("text", x = IC50_est, y = 50,
+               label = paste0("IC50 = ", round(IC50_est, 2)),
+               vjust = -1.0, color = "red", size = 4)
+  }
+
+  print(p2)
+  message("IC50 estimate: ", IC50_est)
+}
+
+# ---------------------------
+# 9) Optional exports
+# ---------------------------
+# write.csv(Combined_norm, "Processed_Viability_3h.csv", row.names = FALSE)
